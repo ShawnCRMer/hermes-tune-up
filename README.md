@@ -1,0 +1,103 @@
+# Tune-up for Hermes
+
+**Keep Hermes fast, healthy and tidy. See what it's storing, free up space safely, check its health, and stop what agents left running.**
+
+![Tune-up: free space, what's safe to clean, what to look at, what's kept on purpose](docs/home.png)
+
+## Why
+
+A Hermes home grows quietly: the session database keeps empty space after old chats are removed, tools fill download caches, old runtimes and agent worktrees pile up, and background processes outlive the job that started them. Hermes ships commands for most of this (`hermes sessions prune`, `hermes pm gc`, `hermes worktree prune` and more), but most people never find them, and deleting files by hand is how you lose something you needed.
+
+Tune-up puts all of it in one panel, in plain language, and asks before it touches anything.
+
+## Clean up
+
+Tune-up starts with how full the drive is, then sorts what it found into groups:
+
+- **Safe to clean**: things Hermes can rebuild or download again, or extra copies where one copy stays. **Free up space safely** shows you the list first.
+- **Take a quick look**: probably not needed, but only you know (old backups, old projects, attachments). Tap a group to choose items.
+- **Kept safe on purpose**: what the safety checks held back, and why.
+
+![Review exactly what will be cleaned before anything happens](docs/clean-up-review.png)
+
+Every item answers **What is it? Is it safe? If I remove it…? Can I undo?** **Show details** adds file locations and the exact commands.
+
+![Done, with the space you actually got back](docs/clean-up-done.png)
+
+Results are measured: you see the real change in free space, not an estimate.
+
+![Take a quick look: items you choose yourself, restorable for 30 days](docs/take-a-look.png)
+
+What it can clean, with your OK:
+
+- **Session database empty space.** Measures the space SQLite keeps inside `state.db`. **Squeeze out empty space** pauses Hermes briefly to pack it, then starts it again, only after you confirm "OK to pause Hermes now".
+- **Old conversations** with `hermes sessions prune`, after a preview that shows how many match. Hermes skips pinned, archived and open sessions.
+- **Download caches and old runtimes**: `uv cache prune`, `hermes pm gc`.
+- **Checkpoints** and **leftover agent worktrees** (`hermes worktree prune`, with a preview first).
+- **Folders Hermes created outside its home** (app workspaces, builds), found from Hermes's own session history and Kanban task folders. Inside them: exact duplicates (one copy always kept), old backup snapshots, rebuildable `node_modules` / `.venv`, large old files. An item is offered only if it isn't tracked by git, isn't open in a running program, isn't referenced by a service or crontab, isn't mentioned by a file in its project, and hasn't changed in 7 days.
+
+## Checkup
+
+Is everything that should be running actually running? Checkup lists Hermes's services, explains anything that's down or crash-looping in plain words, and offers a fix (start, restart, turn off, or bring it back automatically when it exits). It also finds **leftovers**: background processes agents started and never stopped, with the evidence for each, so you can stop the ones you pick.
+
+## Explore
+
+![Explore: a size map of the Hermes home](docs/explore.png)
+
+A size map and list of the Hermes home with a short description of what each folder is for, plus a clean-up shortcut where one applies. **Open full view** shows a large version beside your chat. **Find duplicates** compares the contents of the largest files.
+
+![Full-page Explorer](docs/explorer-page.png)
+
+## Trash
+
+Anything you remove from **Take a quick look** goes to the Hermes Trash first. **Bring back** puts it back where it was (never over something newer). Items left in the Trash for 30 days are deleted the next time Tune-up is opened, or you can **Delete for good** right away.
+
+## Optional: ask AI to explain
+
+**Explain my storage** sends a short summary to a helper model: folder totals, cleanup categories and counts. It never sends file names, paths, contents or credentials. You see exactly what will be sent and tick consent first. Pick the model under **Settings → Models → Auxiliary → Storage Advisor**. It's off until you use it.
+
+## How to open it
+
+- **Tune-up** in the sidebar
+- The free-space reading in the status bar
+- The command palette: **Tune-up: Open beside chat**
+
+![Tune-up on a phone-width window](docs/mobile.png)
+
+## Safety
+
+- Nothing is deleted automatically. Only **Safe to clean** items come ticked; everything in **Take a quick look** you pick yourself. You review a frozen list of exact items before anything happens, and that review expires after 15 minutes.
+- On confirmation, every item is checked again. Anything that changed, was replaced, or became a link since you reviewed it is skipped.
+- Items changed in the last hour, live logs and the session database's own files are never offered.
+- Credential files (`.env`, `auth.json`, keys, `secrets/`) count toward sizes but are never opened, hashed, sent to AI or offered for deletion. Their names are hidden unless you opt in.
+- Commands run as fixed, allow-listed argument lists (no shell), one at a time. Destructive ones need a fresh preview with the same settings.
+- Every action is tied to the Hermes instance and profile you reviewed it in. Other profiles are not touched.
+
+## Install
+
+From Hermes Desktop: **Capabilities → Plugins**, search for **Tune-up**, then **Install**.
+
+From the command line:
+
+```sh
+hermes plugins install storage-utility
+```
+
+Tune-up is one package with two halves: the panel in Desktop and a backend on your Hermes server that measures and cleans. The installer handles both, including when Desktop is connected to a remote gateway.
+
+## Privacy and what it touches
+
+- **Network:** none, except the optional AI explanation, which goes through Hermes's own model routing to the provider you chose, after you consent. No telemetry.
+- **Reads:** metadata (sizes, dates) across the Hermes home; Hermes's session history and Kanban task folders, to find folders Hermes created elsewhere; `/proc`, to see which programs hold files open and which processes belong to Hermes services; `systemctl` status for Hermes services; `journalctl --disk-usage`.
+- **Runs, only when you confirm:** the allow-listed Hermes maintenance commands above; `systemctl start/restart/stop/disable` for Hermes services you choose; a service drop-in file that makes a service restart automatically, if you ask for that (the file says how to undo it); `hermes plugins enable disk-cleanup` if you turn on Hermes's own temp-file cleanup; stopping leftover processes you select.
+- **Writes:** its own state under `<Hermes home>/storage-utility`, and moved items in the Trash.
+- **Background:** scans run when you open Tune-up on a stale snapshot, at most every few minutes while Desktop is open. Nothing runs after Hermes is closed.
+
+## Compatibility and limits
+
+- Hermes Agent **0.23.0** or newer.
+- Tested with Hermes on Linux with systemd, used from Hermes Desktop or the browser Webapp, locally or connected to a remote gateway. macOS and Windows Hermes hosts aren't certified. Service checks and the database pack need systemd.
+
+## License
+
+MIT © 2026 Shawn Cleta

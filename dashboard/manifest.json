@@ -1,0 +1,8 @@
+{
+  "name": "storage-utility",
+  "label": "Tune-up",
+  "description": "Keep Hermes fast, healthy and tidy",
+  "icon": "Activity",
+  "version": "0.7.2",
+  "api": "plugin_api.py"
+}
