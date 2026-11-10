@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from . import chatlink, commands, compaction, state
+from .childenv import minimal_env
 from .contracts import error_body, response
 from .scope import Scope
 
@@ -60,13 +61,10 @@ def _cmdline(pid: int) -> str:
 
 
 def _environ_home(pid: int) -> str | None:
-    try:
-        for entry in Path(f"/proc/{pid}/environ").read_bytes().split(b"\0"):
-            if entry.startswith(b"HERMES_HOME="):
-                return entry.split(b"=", 1)[1].decode(errors="replace")
-    except OSError:
-        pass
-    return None
+    """HERMES_HOME named on a process's own command line (e.g. `env HERMES_HOME=... cmd`).
+    /proc/<pid>/environ is never read: it holds provider keys."""
+    match = re.search(r"(?:^|\s)HERMES_HOME=(\S+)", _cmdline(pid))
+    return match.group(1).strip("'\"") if match else None
 
 
 def _listening_ports() -> dict[int, list[int]]:
@@ -149,9 +147,9 @@ def _reachable(port: int) -> bool:
 def _last_log(unit: str) -> str | None:
     try:
         # The program's own output (not systemd's "Failed with result…" bookkeeping lines).
-        out = subprocess.run(["journalctl", f"_SYSTEMD_UNIT={unit}", "-n", "40", "--no-pager", "-o", "cat"], capture_output=True, text=True, timeout=10).stdout
+        out = subprocess.run(["journalctl", f"_SYSTEMD_UNIT={unit}", "-n", "40", "--no-pager", "-o", "cat"], capture_output=True, text=True, timeout=10, env=minimal_env()).stdout
         if not out.strip():
-            out = subprocess.run(["journalctl", "-u", unit, "-n", "20", "--no-pager", "-o", "cat"], capture_output=True, text=True, timeout=10).stdout
+            out = subprocess.run(["journalctl", "-u", unit, "-n", "20", "--no-pager", "-o", "cat"], capture_output=True, text=True, timeout=10, env=minimal_env()).stdout
     except (OSError, subprocess.TimeoutExpired):
         return None
     lines = [line.strip() for line in out.splitlines() if line.strip()]
@@ -242,16 +240,8 @@ def leftovers(scope: Scope, units: dict[str, Any] | None = None, *, pattern: str
 # ----- plain-language explanation of a leftover ------------------------------------------
 
 def _script_text(command: str) -> str:
-    """The command plus, when it runs a small script file, that script's text (for recognising it)."""
-    text = command
-    for token in command.split():
-        path = Path(token)
-        try:
-            if path.is_file() and path.stat().st_size < 65536 and path.suffix in {".sh", ".py", ".js", ".mjs", ""}:
-                text += "\n" + path.read_text(errors="replace")[:20000]
-        except OSError:
-            continue
-    return text
+    """The command line only. Scripts it names are not opened (they can hold credentials)."""
+    return command
 
 
 def _served_folder(text: str) -> str | None:
@@ -367,8 +357,13 @@ def checkup(scope: Scope, *, pattern: str = "hermes*", transient: str = "*.servi
         gave_up = props.get("ActiveState") == "failed" and restarts >= 3 and props.get("UnitFileState") == "enabled"
         not_staying_up = props.get("SubState") != "running"
         if (restarts >= CRASH_LOOP_RESTARTS and not_staying_up) or restarts >= CRASH_LOOP_RESTARTS * 5 or gave_up:
+            other = compaction._service_home(name)
+            belongs = compaction._same(other, scope.home)
+            whose = ("It runs for this Hermes." if belongs else
+                     f"It is not part of this Hermes: it runs for {other}." if other else
+                     "It is not part of this Hermes (it belongs to another install or profile).")
             cards.append({"id": f"loop-{name}", "level": "bad", "title": f"{name} keeps crashing and restarting",
-                          "text": f"It has restarted {props.get('NRestarts', '?')} times and fills the system log. Last message: {_last_log(name) or 'none'}",
+                          "text": f"{whose} It has restarted {props.get('NRestarts', '?')} times and fills the system log. Last message: {_last_log(name) or 'none'}",
                           "fix": {"action": "turn-off", "unit": name, "label": "Turn it off (can be turned back on)"}})
     tunnels = [name for name, active in compaction._units("cloudflared*") + compaction._units("tailscaled*") if active == "active" and name.endswith(".service")]
     rest = leftovers(scope, units, transient=transient, min_age=min_age)
@@ -395,7 +390,7 @@ def checkup(scope: Scope, *, pattern: str = "hermes*", transient: str = "*.servi
 # ----- fixes (each confirmed, each re-checked against the live system) ----------------------
 
 def _systemctl(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["systemctl", *args], capture_output=True, text=True, timeout=120)
+    return subprocess.run(["systemctl", *args], capture_output=True, text=True, timeout=120, env=minimal_env())
 
 
 def _alive_identity(pid: int, start: int) -> bool:

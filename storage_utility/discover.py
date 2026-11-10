@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from .scope import Scope
+from .childenv import minimal_env
 
 _CACHE: dict[str, tuple[float, Any]] = {}
 _LOCK = threading.Lock()
@@ -102,7 +103,7 @@ def worktree_repos(scope: Scope) -> list[dict[str, Any]]:
     def compute() -> list[dict[str, Any]]:
         try:
             done = subprocess.run([sys.executable, "-I", "-c", _DISCOVER, str(scope.home)], capture_output=True,
-                                  text=True, timeout=60, stdin=subprocess.DEVNULL)
+                                  text=True, timeout=60, stdin=subprocess.DEVNULL, env=minimal_env())
             rows = json.loads(done.stdout or "[]")
         except (OSError, subprocess.SubprocessError, ValueError):
             return []
@@ -167,7 +168,7 @@ def hermes_units() -> list[dict[str, str]]:
         return []
     try:
         done = subprocess.run(["systemctl", "list-units", "--all", "--plain", "--no-legend", "--no-pager", "hermes*"],
-                              capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
+                              capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, env=minimal_env())
     except (OSError, subprocess.SubprocessError):
         return []
     units = []

@@ -24,6 +24,7 @@ from typing import Any
 from . import commands, discover
 from .fsutil import list_children, measure, volume_free
 from .scope import Scope, is_sensitive
+from .childenv import minimal_env
 
 _CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 _CACHE_LOCK = threading.Lock()
@@ -540,7 +541,7 @@ def _tree_bytes(path: Path, limit_seconds: float = 20.0) -> int | None:
 def _journal_bytes() -> int | None:
     import subprocess
     try:
-        out = subprocess.run(["journalctl", "--disk-usage"], capture_output=True, text=True, timeout=20).stdout
+        out = subprocess.run(["journalctl", "--disk-usage"], capture_output=True, text=True, timeout=20, env=minimal_env()).stdout
     except (OSError, subprocess.TimeoutExpired):
         return None
     match = re.search(r"take up ([0-9.]+)([KMGT])", out)

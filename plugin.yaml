@@ -1,5 +1,5 @@
 name: storage-utility
-version: 0.7.2
+version: 0.7.3
 requires_hermes: ">=0.23.0"
 author: "Shawn Cleta"
 description: "Tune-up: keep Hermes fast, healthy and tidy. See what Hermes is storing, free up space safely with review-first cleanup and a restorable Trash, check service health and stop leftover processes."

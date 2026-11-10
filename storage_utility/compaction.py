@@ -1,7 +1,9 @@
 """Plan and launch the packing job for state.db (see compact_job.py), and report its result.
 
 Only services PROVEN to serve this Hermes home are ever paused:
-  * a service whose process or settings say HERMES_HOME=<this home>, or that holds this state.db;
+  * a service whose unit settings (systemd `Environment=`, or its user's default ~/.hermes when
+    HERMES_HOME is unset) point at this home. No env files, start scripts or /proc/<pid>/environ
+    are opened, because those hold provider keys;
   * a watcher/timer whose triggered unit serves this home or restarts one of those services.
 Anything else holding the file (a program not run as a service) blocks the job up front.
 """
@@ -19,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from . import commands, state
+from .childenv import minimal_env
 from .contracts import error_body, response
 from .scope import Scope
 
@@ -31,12 +34,15 @@ THROUGHPUT_BYTES_PER_SECOND = 40 * 1024 * 1024  # conservative; measured much fa
 def _show(unit: str, *props: str) -> dict[str, str]:
     try:
         out = subprocess.run(["systemctl", "show", unit, *[f"-p{prop}" for prop in props]],
-                             capture_output=True, text=True, timeout=15).stdout
+                             capture_output=True, text=True, timeout=15, env=minimal_env()).stdout
     except (OSError, subprocess.TimeoutExpired):
         return {}
     values = {}
     for line in out.splitlines():
         key, _, value = line.partition("=")
+        if key == "Environment":
+            # Keep only the two settings Tune-up needs; other entries can be credentials.
+            value = " ".join(item for item in value.split() if item.startswith(("HERMES_HOME=", "HOME=")))
         values[key] = value
     return values
 
@@ -56,59 +62,35 @@ def _same(path: str | None, home: Path) -> bool:
 
 
 def _service_home(unit: str) -> str | None:
-    """HERMES_HOME of a running service: its process first, then its settings and env files."""
-    props = _show(unit, "MainPID", "Environment", "EnvironmentFiles", "ExecStart")
-    pid = props.get("MainPID", "0")
-    if pid.isdigit() and pid != "0":
-        try:
-            for entry in Path(f"/proc/{pid}/environ").read_bytes().split(b"\0"):
-                if entry.startswith(b"HERMES_HOME="):
-                    return entry.split(b"=", 1)[1].decode(errors="replace")
-        except OSError:
-            pass
+    """HERMES_HOME of a service, from its systemd `Environment=` only.
+
+    `hermes gateway install` writes HERMES_HOME there. When it is unset, Hermes uses
+    ~/.hermes of the HOME in that environment, or of the unit's `User=` (root by default).
+    Env files, start scripts and /proc/<pid>/environ are never read: they hold provider keys.
+    """
+    props = _show(unit, "Environment", "User")
     found = _env_home(props.get("Environment", ""))
     if found:
         return found
-    for raw in re.findall(r"(\S+) \(ignore_errors=", props.get("EnvironmentFiles", "")):
-        try:
-            text = Path(raw).read_text(errors="replace")[:65536]
-        except OSError:
-            continue
-        found = _env_home(text.replace("\n", " "))
-        if found:
-            return found
-    return None
+    home = re.search(r"(?:^|\s)HOME=(\S+)", props.get("Environment", ""))
+    if home:
+        return str(Path(home.group(1).strip("'\"")) / ".hermes")
+    try:
+        import pwd
+        return str(Path(pwd.getpwnam(props.get("User") or "root").pw_dir) / ".hermes")
+    except (ImportError, KeyError):
+        return None
 
 
 def _script_mentions(unit: str, home: Path) -> bool:
-    """Does the unit's start script (or an env file it loads with `. file` / `source file`) name this home?"""
+    """Does the unit's start command line itself name this home? (No files are opened.)"""
     exec_start = _show(unit, "ExecStart").get("ExecStart", "")
-    match = re.search(r"path=(\S+)", exec_start)
-    if not match:
-        return False
-    texts = []
-    try:
-        script = Path(match.group(1))
-        if script.is_file() and script.stat().st_size < 262144:
-            text = script.read_text(errors="replace")
-            texts.append(text)
-            for sourced in re.findall(r"(?:^|[;\s])(?:\.|source)\s+(/[^\s;]+)", text, flags=re.M):
-                candidate = Path(sourced)
-                if candidate.is_file() and candidate.stat().st_size < 65536:
-                    texts.append(candidate.read_text(errors="replace"))
-    except OSError:
-        return False
-    target = os.path.realpath(home)
-    for text in texts:
-        for found in re.findall(r"HERMES_HOME=[\"']?([^\s\"']+)", text):
-            if _same(found, home):
-                return True
-    return False
+    return any(_same(found, home) for found in re.findall(r"HERMES_HOME=[\"']?([^\s\"';]+)", exec_start))
 
 
 def _active(unit: str) -> bool:
     try:
-        return subprocess.run(["systemctl", "is-active", unit], capture_output=True, text=True, timeout=10).stdout.strip() in {"active", "activating", "reloading"}
+        return subprocess.run(["systemctl", "is-active", unit], capture_output=True, text=True, timeout=10, env=minimal_env()).stdout.strip() in {"active", "activating", "reloading"}
     except (OSError, subprocess.TimeoutExpired):
         return True  # unknown: assume busy, never interrupt
 
@@ -116,7 +98,7 @@ def _active(unit: str) -> bool:
 def _units(pattern: str) -> list[tuple[str, str]]:
     try:
         out = subprocess.run(["systemctl", "list-units", "--all", "--plain", "--no-legend", pattern],
-                             capture_output=True, text=True, timeout=15).stdout
+                             capture_output=True, text=True, timeout=15, env=minimal_env()).stdout
     except (OSError, subprocess.TimeoutExpired):
         return []
     rows = []
@@ -148,7 +130,10 @@ def select_units(home: Path, *, pattern: str = "hermes*") -> dict[str, Any]:
             continue
         # Only a service PROVEN to serve this home. Holding the file is not proof: a test or second
         # Hermes can run inside another service's process group. Such holders block the job instead.
-        if _same(_service_home(name), home):
+        # HERMES_HOME set in the unit's Environment= is proof on its own; a home inferred from the
+        # user's default ~/.hermes only counts when the unit also holds this state.db right now.
+        explicit = _env_home(_show(name, "Environment").get("Environment", ""))
+        if _same(_service_home(name), home) and (explicit or name in holder_units.values()):
             services.append(name)
     watchers, actions = [], []
     for name, _ in running:
@@ -173,7 +158,7 @@ def _facts(db: Path) -> dict[str, Any] | None:
             "print(json.dumps(db_facts(sys.argv[1])))")
     try:
         out = subprocess.run([sys.executable, "-c", code, str(db), str(Path(__file__).resolve().parents[1])],
-                             capture_output=True, text=True, timeout=60)
+                             capture_output=True, text=True, timeout=60, env=minimal_env())
         return json.loads(out.stdout) if out.returncode == 0 else None
     except (OSError, ValueError, subprocess.TimeoutExpired):
         return None
@@ -257,7 +242,7 @@ def launch(scope: Scope, body: dict[str, Any], *, pattern: str = "hermes*", unit
             f"--property=ExecStopPost={sys.executable} {job} --restore {plan_file}",
             sys.executable, job, str(plan_file)]
     try:
-        started = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+        started = subprocess.run(argv, capture_output=True, text=True, timeout=30, env=minimal_env())
     except (OSError, subprocess.TimeoutExpired) as error:
         state.write_json(scope, STATUS, {"state": "failed", "jobId": job_id, "steps": [{"text": f"Could not start: {error}"}]})
         return 503, error_body("unavailable", "could not start the packing job", retryable=True, binding=scope.binding)

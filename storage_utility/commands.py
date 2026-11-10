@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .fsutil import measure, volume_free
+from .childenv import minimal_env
 from .scope import Scope
 
 SESSION_PRUNE_DAYS = (30, 60, 90, 180, 365)
@@ -282,12 +283,22 @@ def availability(scope: Scope, spec: CommandSpec) -> tuple[bool, str | None]:
     return True, None
 
 
-def _environment(scope: Scope) -> dict[str, str]:
-    env = dict(os.environ)
-    env["HERMES_HOME"] = str(scope.home)
-    env["UV_CACHE_DIR"] = str(scope.home / "cache" / "uv")
-    env["PYTHONUNBUFFERED"] = "1"
-    return env
+def _is_hermes(argv: list[str]) -> bool:
+    base = hermes_argv()
+    return bool(base) and list(argv[:len(base)]) == base
+
+
+def _environment(scope: Scope, argv: list[str]) -> dict[str, str]:
+    """Hermes's own CLI gets the full environment (it needs the profile's settings).
+    Every other tool gets only PATH, HOME and locale (plus UV_CACHE_DIR for uv)."""
+    if _is_hermes(argv):
+        env = dict(os.environ)
+        env["HERMES_HOME"] = str(scope.home)
+        env["UV_CACHE_DIR"] = str(scope.home / "cache" / "uv")
+        env["PYTHONUNBUFFERED"] = "1"
+        return env
+    is_uv = Path(argv[0]).name == "uv" if argv else False
+    return minimal_env(UV_CACHE_DIR=str(scope.home / "cache" / "uv") if is_uv else None)
 
 
 def _tail(text: str) -> str:
@@ -328,7 +339,7 @@ def preview(scope: Scope, command_id: str, raw_params: Any) -> tuple[int, dict[s
     if argv is None:
         return 503, {"code": "unavailable", "message": "the required executable is not available"}
     try:
-        completed = subprocess.run(argv, env=_environment(scope), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        completed = subprocess.run(argv, env=_environment(scope, argv), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, timeout=_PREVIEW_TIMEOUT, text=True, errors="replace")
     except subprocess.TimeoutExpired:
         return 504, {"code": "preview_timeout", "message": "the dry run took too long"}
@@ -406,7 +417,7 @@ def start(scope: Scope, command_id: str, raw_params: Any, preview_token: Any, on
         try:
             job["before"] = {"ownedBytes": _measure_paths(scope, spec.measure) if spec.measure else None, "volumeFreeBytes": volume_free(scope)}
             try:
-                completed = subprocess.run(argv, env=_environment(scope), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                completed = subprocess.run(argv, env=_environment(scope, argv), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                            stderr=subprocess.STDOUT, timeout=_RUN_TIMEOUT, text=True, errors="replace")
                 job["exitCode"] = completed.returncode
                 job["output"] = _tail(completed.stdout or "")

@@ -9,7 +9,7 @@ const PALETTE_AREA = sdk.PALETTE_AREA
 const SIDEBAR_NAV_AREA = sdk.SIDEBAR_NAV_AREA
 
 const ID = 'storage-utility'
-const VERSION = '0.7.2'
+const VERSION = '0.7.3'
 // The oldest server part these screens work with. Bump only when the backend changes, so a
 // screens-only update never asks for a restart it doesn't need.
 const SERVER_NEEDS = '0.7.1'

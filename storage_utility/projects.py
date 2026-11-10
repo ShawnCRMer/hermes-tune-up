@@ -30,6 +30,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+from .childenv import minimal_env
 
 DAY = 86400
 RECENT_DAYS = 7
@@ -228,7 +229,7 @@ def service_text() -> list[tuple[str, str]]:
         except OSError:
             pass
     try:
-        crontab = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=5).stdout
+        crontab = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=5, env=minimal_env()).stdout
         if crontab:
             sources.append(("crontab", crontab))
     except (OSError, subprocess.SubprocessError):
@@ -296,7 +297,7 @@ def _git_tracked(root: str) -> set[str] | None:
     if not os.path.exists(os.path.join(root, ".git")):
         return None
     try:
-        done = subprocess.run(["git", "-C", root, "ls-files", "-z"], capture_output=True, timeout=30)
+        done = subprocess.run(["git", "-C", root, "ls-files", "-z"], capture_output=True, timeout=30, env=minimal_env())
     except (OSError, subprocess.SubprocessError):
         return set()
     return {item.decode("utf-8", "surrogateescape") for item in done.stdout.split(b"\0") if item}

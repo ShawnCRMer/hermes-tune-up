@@ -69,7 +69,7 @@ Anything you remove from **Take a quick look** goes to the Hermes Trash first. *
 - Nothing is deleted automatically. Only **Safe to clean** items come ticked; everything in **Take a quick look** you pick yourself. You review a frozen list of exact items before anything happens, and that review expires after 15 minutes.
 - On confirmation, every item is checked again. Anything that changed, was replaced, or became a link since you reviewed it is skipped.
 - Items changed in the last hour, live logs and the session database's own files are never offered.
-- Credential files (`.env`, `auth.json`, keys, `secrets/`) count toward sizes but are never opened, hashed, sent to AI or offered for deletion. Their names are hidden unless you opt in.
+- Credential files (`.env`, `auth.json`, keys, `secrets/`) count toward sizes but are never opened, hashed, sent to AI or offered for deletion. Their names are hidden unless you opt in. Service environments and `/proc/<pid>/environ` aren't read either.
 - Commands run as fixed, allow-listed argument lists (no shell), one at a time. Destructive ones need a fresh preview with the same settings.
 - Every action is tied to the Hermes instance and profile you reviewed it in. Other profiles are not touched.
 
@@ -88,8 +88,21 @@ Tune-up is one package with two halves: the panel in Desktop and a backend on yo
 ## Privacy and what it touches
 
 - **Network:** none, except the optional AI explanation, which goes through Hermes's own model routing to the provider you chose, after you consent. No telemetry.
-- **Reads:** metadata (sizes, dates) across the Hermes home; Hermes's session history and Kanban task folders, to find folders Hermes created elsewhere; `/proc`, to see which programs hold files open and which processes belong to Hermes services; `systemctl` status for Hermes services; `journalctl --disk-usage`.
-- **Runs, only when you confirm:** the allow-listed Hermes maintenance commands above; `systemctl start/restart/stop/disable` for Hermes services you choose; a service drop-in file that makes a service restart automatically, if you ask for that (the file says how to undo it); `hermes plugins enable disk-cleanup` if you turn on Hermes's own temp-file cleanup; stopping leftover processes you select.
+- **Credentials:** never read. Tune-up doesn't open `.env` files, `auth.json`, keys, service environment files, the scripts a service starts, or `/proc/<pid>/environ`. It finds which Hermes home a service belongs to from the service's own systemd settings (`Environment=`, `User=`) and whether it has the session database open. Commands it runs, other than Hermes's own CLI, get only `PATH`, `HOME` and the locale, never your API keys.
+- **Reads:**
+  - Sizes and dates across the Hermes home.
+  - Hermes's session history and Kanban task folders, to find folders Hermes created elsewhere.
+  - Your home's tool caches (`~/.cache`, `~/.npm`, `~/.pnpm-store` and similar).
+  - `/proc`: process lists, command lines, open files and cgroups. Used to see what's still in use and what agents left running.
+  - systemd unit status and settings (`systemctl show/list-units`), recent service log lines (`journalctl`), `journalctl --disk-usage`, your `crontab -l`, and `git ls-files` in project folders, to check whether a file is tracked.
+- **Changes, only after you review and confirm:**
+  - **Deletes** files you choose in project folders Hermes created, and in the tool caches above (npm, pip, uv, pnpm, Playwright and similar). **Free up space safely** deletes these permanently; they're things that are downloaded again when needed. Items from **Take a quick look** go to the Trash first.
+  - Runs the allow-listed maintenance commands: `hermes sessions prune`, `hermes pm gc`, `hermes checkpoints prune/clear`, `hermes worktree prune`, `uv cache prune`, `pnpm store prune` and `git gc`. When Hermes runs as root it adds `journalctl --vacuum-size=200M` and `apt-get clean`.
+  - `systemctl start/restart/stop/disable` for Hermes services you choose. Units from another Hermes install or profile are labeled as not part of this Hermes.
+  - A service drop-in file that makes a service restart automatically, if you ask for that. The file says how to undo it.
+  - `hermes plugins enable disk-cleanup`, if you turn on Hermes's own temp-file cleanup.
+  - Stopping leftover processes you select.
+  - Briefly stopping and restarting the Hermes services that use this home, to pack the session database.
 - **Writes:** its own state under `<Hermes home>/storage-utility`, and moved items in the Trash.
 - **Background:** scans run when you open Tune-up on a stale snapshot, at most every few minutes while Desktop is open. Nothing runs after Hermes is closed.
 

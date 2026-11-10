@@ -60,8 +60,15 @@ class Log:
         print(text, flush=True)
 
 
+def _minimal_env() -> dict[str, str]:
+    """Non-Hermes children get only PATH, HOME and locale (this file also runs standalone)."""
+    env = {key: os.environ[key] for key in ("PATH", "HOME", "LANG", "LC_ALL") if os.environ.get(key)}
+    env.setdefault("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+    return env
+
+
 def systemctl(*args: str, timeout: int = 120) -> subprocess.CompletedProcess:
-    return subprocess.run(["systemctl", *args], capture_output=True, text=True, timeout=timeout)
+    return subprocess.run(["systemctl", *args], capture_output=True, text=True, timeout=timeout, env=_minimal_env())
 
 
 def is_active(unit: str) -> bool:

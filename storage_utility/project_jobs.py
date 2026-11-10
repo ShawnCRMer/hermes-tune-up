@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 from . import state
 from .scope import Scope
+from .childenv import minimal_env
 
 LATEST = "projects-latest.json"
 STALE_SECONDS = 6 * 3600
@@ -66,7 +67,7 @@ def start(scope: Scope, *, on_done: Callable[[], None] | None = None, only_if_st
     def worker() -> None:
         try:
             done = subprocess.run([sys.executable, "-I", "-c", _BOOT, _PACKAGE_ROOT, str(scope.home), user_home()],
-                                  capture_output=True, text=True, timeout=_TIMEOUT, stdin=subprocess.DEVNULL)
+                                  capture_output=True, text=True, timeout=_TIMEOUT, stdin=subprocess.DEVNULL, env=minimal_env())
             result = json.loads(done.stdout) if done.returncode == 0 and done.stdout.strip() else None
             if not isinstance(result, dict):
                 job["error"] = "the project scan did not finish"
