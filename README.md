@@ -2,6 +2,10 @@
 
 **Keep Hermes fast, healthy and tidy. See what it's storing, free up space safely, check its health, and stop what agents left running.**
 
+[![Watch the 90-second Tune-up film](docs/promo-poster.jpg)](https://github.com/ShawnCRMer/hermes-tune-up/releases/download/v0.7.3/tune-up-promo.mp4)
+
+▶ **[Watch the 90-second film](https://github.com/ShawnCRMer/hermes-tune-up/releases/download/v0.7.3/tune-up-promo.mp4)**. The scan numbers in it come from a real Hermes install before cleanup; the animated scenes are illustrations.
+
 ![Tune-up: free space, what's safe to clean, what to look at, what's kept on purpose](docs/home.png)
 
 ## Why
