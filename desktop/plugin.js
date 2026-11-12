@@ -9,7 +9,7 @@ const PALETTE_AREA = sdk.PALETTE_AREA
 const SIDEBAR_NAV_AREA = sdk.SIDEBAR_NAV_AREA
 
 const ID = 'storage-utility'
-const VERSION = '0.7.3'
+const VERSION = '0.8.0'
 // The oldest server part these screens work with. Bump only when the backend changes, so a
 // screens-only update never asks for a restart it doesn't need.
 const SERVER_NEEDS = '0.7.1'
@@ -1513,7 +1513,7 @@ function Header({ store, onOpenFull, onClose }) {
         onClose && jsx('button', { type: 'button', className: 'su-full', onClick: onClose, 'aria-label': 'Close Tune-up', title: 'Close Tune-up and go back to just your chat', children: 'Close ✕' })
       ] }),
       jsx('div', { className: 'su-meta', children: [`The computer Hermes runs on${backend?.os ? ` (${backend.os})` : ''}, not the device you're viewing from`, profile ? `profile ${profile}` : null].filter(Boolean).join(' · ') }),
-      mismatch && jsx('div', { className: 'su-note su-warn', children: `Tune-up on ${machine} is ${serverVersion ? `version ${serverVersion}` : 'an older version'}, but this screen is ${VERSION}. To finish updating, restart the Hermes dashboard service on ${machine} (sudo systemctl restart hermes-dashboard). Until then some information may be missing.` })
+      mismatch && jsx('div', { className: 'su-note su-warn', children: `Tune-up on ${machine} is ${serverVersion ? `version ${serverVersion}` : 'an older version'}, but this screen is ${VERSION}. To finish updating, ${backend?.os === 'Darwin' ? `quit and reopen Hermes on ${machine}` : `restart the Hermes dashboard service on ${machine} (sudo systemctl restart hermes-dashboard)`}. Until then some information may be missing.` })
     ]
   })
 }

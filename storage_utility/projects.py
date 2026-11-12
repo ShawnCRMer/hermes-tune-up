@@ -30,6 +30,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+from . import hostos
 from .childenv import minimal_env
 
 DAY = 86400
@@ -179,6 +180,8 @@ def in_use_paths(user_home: str) -> list[str]:
     Fails closed: raises Blind unless every process could be inspected. A partial view
     (no /proc, hidden processes, another user's programs) would make "not in use" a guess.
     """
+    if hostos.IS_MACOS:
+        return _in_use_paths_macos(user_home)
     if not os.path.isdir("/proc/self/fd"):
         raise Blind("this kind of computer doesn't let Storage see which programs have files open")
     if not os.path.exists("/proc/1"):
@@ -214,14 +217,38 @@ def in_use_paths(user_home: str) -> list[str]:
     return sorted(paths)
 
 
+def _in_use_paths_macos(user_home: str) -> list[str]:
+    """macOS can't prove "not in use": psutil (proc_pidinfo) lists open files but not open folder
+    descriptors, and a non-administrator can't inspect other users' programs at all. Fail closed."""
+    raise Blind("macOS doesn't let Storage see every folder programs have open")
+
+
+def _launchd_text(path: str) -> str | None:
+    """A launchd job's settings as searchable text, without its EnvironmentVariables (keys live there)."""
+    from .launchd import _read_plist
+    data = _read_plist(Path(path))
+    if data is None:
+        return None
+    data.pop("EnvironmentVariables", None)
+    return json.dumps(data, default=str)
+
+
 def service_text() -> list[tuple[str, str]]:
-    """(source, text) for systemd units and crontabs that could start things from a project."""
+    """(source, text) for systemd units, launchd jobs and crontabs that could start things from a project."""
     sources = []
-    for directory in ("/etc/systemd/system", "/lib/systemd/system", os.path.expanduser("~/.config/systemd/user"), "/etc/cron.d"):
+    directories = ("/etc/systemd/system", "/lib/systemd/system", os.path.expanduser("~/.config/systemd/user"), "/etc/cron.d")
+    if hostos.IS_MACOS:
+        directories = (os.path.expanduser("~/Library/LaunchAgents"), "/Library/LaunchAgents", "/Library/LaunchDaemons")
+    for directory in directories:
         try:
             for name in os.listdir(directory):
                 path = os.path.join(directory, name)
                 if os.path.isfile(path) and os.path.getsize(path) < 256 * 1024:
+                    if hostos.IS_MACOS:
+                        text = _launchd_text(path)
+                        if text:
+                            sources.append((name, text))
+                        continue
                     try:
                         sources.append((name, Path(path).read_text(errors="replace")))
                     except OSError:

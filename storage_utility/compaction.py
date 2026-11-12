@@ -165,6 +165,9 @@ def _facts(db: Path) -> dict[str, Any] | None:
 
 
 def _availability(home: Path) -> str | None:
+    if sys.platform == "darwin":
+        return ("On a Mac, Tune-up can't pause Hermes by itself yet: the Desktop app and the gateway keep the "
+                "chat history file open, and pausing them would also close this screen. Use the steps instead.")
     if not sys.platform.startswith("linux") or not shutil.which("systemd-run") or not os.path.isdir("/run/systemd/system"):
         return "This computer doesn't run Hermes as background services, so Storage can't pause it safely. Use the steps instead."
     if os.geteuid() != 0:

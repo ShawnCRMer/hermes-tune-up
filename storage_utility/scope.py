@@ -16,6 +16,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
+from . import hostos
 from .contracts import Binding
 
 POLICY_VERSION = "v2-aggregate"
@@ -183,7 +184,9 @@ class Scope:
             if not stat_is_directory(root_stat.st_mode):
                 raise ValueError("scoped Hermes home must be an existing directory")
             try:
-                canonical_home = os.path.realpath(f"/proc/self/fd/{home_fd}")
+                # Linux: /proc/self/fd (unchanged). macOS: F_GETPATH. Must name the same folder in
+                # every process: scan workers rebuild this scope and must reproduce its binding.
+                canonical_home = hostos.fd_path(home_fd)
             except OSError as exc:
                 raise ValueError("scoped Hermes home identity is unavailable") from exc
             if not canonical_home or not os.path.isabs(canonical_home):

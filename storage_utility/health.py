@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import chatlink, commands, compaction, state
+from . import chatlink, commands, compaction, hostos, state
 from .childenv import minimal_env
 from .contracts import error_body, response
 from .scope import Scope
@@ -161,6 +161,9 @@ def _last_log(unit: str) -> str | None:
 def leftovers(scope: Scope, units: dict[str, Any] | None = None, *, pattern: str = "hermes*", transient: str = "*.service",
               min_age: float | None = None) -> list[dict[str, Any]]:
     """Background processes agents left behind, with the evidence for each."""
+    if hostos.IS_MACOS:
+        from . import health_macos
+        return health_macos.leftovers(scope, pattern=pattern, min_age=min_age)
     units = units or compaction.select_units(scope.home, pattern=pattern)
     min_age = MIN_LEFTOVER_AGE if min_age is None else min_age
     now = time.time()
@@ -323,6 +326,9 @@ def _disk_cleanup_enabled() -> bool | None:
 
 def checkup(scope: Scope, *, pattern: str = "hermes*", transient: str = "*.service", min_age: float | None = None,
             check_disk_cleanup: bool = True) -> dict[str, Any]:
+    if hostos.IS_MACOS:
+        from . import health_macos
+        return health_macos.checkup(scope, pattern=pattern, min_age=min_age, check_disk_cleanup=check_disk_cleanup)
     if not os.path.isdir("/run/systemd/system"):
         return {"available": False, "reason": "This computer doesn't run Hermes as background services, so there's nothing to check here.", "cards": []}
     services, units = _service_rows(scope, pattern)
@@ -399,6 +405,9 @@ def _alive_identity(pid: int, start: int) -> bool:
 
 
 def act(scope: Scope, body: dict[str, Any], **checkup_options: Any) -> tuple[int, dict[str, Any]]:
+    if hostos.IS_MACOS:
+        from . import health_macos
+        return health_macos.act(scope, body, **checkup_options)
     if (body.get("confirmation") or {}).get("acknowledged") is not True:
         return 409, error_body("confirmation_required", "confirm first", retryable=False, binding=scope.binding)
     action = str(body.get("action") or "")

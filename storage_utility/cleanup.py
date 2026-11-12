@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import commands, discover
+from . import commands, discover, hostos
 from .fsutil import list_children, measure, volume_free
 from .scope import Scope, is_sensitive
 from .childenv import minimal_env
@@ -208,7 +208,9 @@ def _session_db(scope: Scope) -> dict[str, Any] | None:
                      + ", ".join(plan["stopUnits"]) + ". This Storage panel disconnects too; that is expected.")
         stop_command, start_command = plan["stopCommand"], plan["startCommand"]
     else:
-        stop_text = "Stop every Hermes process using this profile: the gateway/background service, the Desktop app and any dashboard."
+        stop_text = ("Quit the Hermes Desktop app (Hermes > Quit) and stop the gateway; on a Mac both keep the session database open. "
+                     "Run these steps in Terminal." if hostos.IS_MACOS else
+                     "Stop every Hermes process using this profile: the gateway/background service, the Desktop app and any dashboard.")
         stop_command, start_command = "hermes gateway stop", "hermes gateway start"
     steps = [{"text": stop_text, "command": stop_command}]
     for row in plan.get("looseHolders") or []:
@@ -216,7 +218,8 @@ def _session_db(scope: Scope) -> dict[str, Any] | None:
                       "command": f"kill {row['pid']}"})
     steps += [
         {"text": "Check that nothing still holds the database (no output means you can continue).",
-         "command": f"fuser -v {scope.home}/state.db {scope.home}/state.db-wal 2>&1 | grep -v '^$' || true"},
+         "command": (f"lsof '{scope.home}/state.db' '{scope.home}/state.db-wal' 2>/dev/null || true" if hostos.IS_MACOS else
+                     f"fuser -v {scope.home}/state.db {scope.home}/state.db-wal 2>&1 | grep -v '^$' || true")},
         {"text": "Compact the session database. Conversations, settings and search are unchanged; only empty space is removed." +
                  (" This also finishes the search-index upgrade." if upgrade else " The search index is already in the compact layout, so only the VACUUM step runs."),
          "command": command},
@@ -581,6 +584,8 @@ def _pnpm_store(scope: Scope) -> dict[str, Any] | None:
     if not _shutil.which("pnpm"):
         return None
     store = Path.home() / ".local" / "share" / "pnpm"
+    if hostos.IS_MACOS and not store.is_dir():
+        store = Path.home() / "Library" / "pnpm"  # pnpm's default store location on macOS
     size = _tree_bytes(store) if store.is_dir() else None
     if not size:
         return None

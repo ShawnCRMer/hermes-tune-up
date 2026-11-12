@@ -23,16 +23,8 @@ _LIVE_NAMES = {"state.db", "kanban.db", "response_store.db"}
 
 
 def _open_by_this_process() -> set[str]:
-    paths = set()
-    try:
-        for fd in os.listdir("/proc/self/fd"):
-            try:
-                paths.add(os.readlink(f"/proc/self/fd/{fd}"))
-            except OSError:
-                pass
-    except OSError:
-        pass
-    return paths
+    from .hostos import own_open_paths
+    return own_open_paths()
 
 
 def _hashable(item: dict[str, Any], home: str = "", open_paths: frozenset | set = frozenset()) -> bool:

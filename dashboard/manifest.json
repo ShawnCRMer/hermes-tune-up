@@ -3,6 +3,6 @@
   "label": "Tune-up",
   "description": "Keep Hermes fast, healthy and tidy",
   "icon": "Activity",
-  "version": "0.7.3",
+  "version": "0.8.0",
   "api": "plugin_api.py"
 }
