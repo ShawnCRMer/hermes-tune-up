@@ -1,7 +1,10 @@
 """Private plugin state: no-follow JSON files under <home>/storage-utility, one lock."""
 from __future__ import annotations
 
-import fcntl
+try:
+    import fcntl
+except ImportError:  # Windows: private state locking is unavailable; callers fail closed
+    fcntl = None
 import functools
 import json
 import os
